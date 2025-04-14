@@ -1,0 +1,8 @@
+PyQt6>=6.5.0
+pynput>=1.7.6
+psutil>=5.9.0
+SQLAlchemy>=2.0.0
+matplotlib>=3.7.0
+pygame>=2.5.0               # For audio
+plotly>=5.13.0              # Alternative to matplotlib
+PyInstaller>=5.9.0          # For packaging
