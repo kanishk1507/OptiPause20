@@ -1,21 +1,22 @@
-# src/ui/main_window.py
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QSystemTrayIcon, QMenu,
-    QTabWidget, QGridLayout, QSlider, QCheckBox, QComboBox
+    QTabWidget, QGridLayout, QSlider, QCheckBox, QComboBox,
+    QMessageBox
 )
 from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QIcon, QAction
-
-import os 
-from PyQt6.QtGui import QIcon
-
+import os
 
 from .notification import NotificationWindow
 
 class MainWindow(QMainWindow):
     """Main application window with settings and dashboard."""
-    
+        
+    # Define the signal as a class attribute
+    break_notification_signal = pyqtSignal()
+
     def __init__(self, app_controller):
         super().__init__()
         
@@ -25,6 +26,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("OptiPause20")
         self.setMinimumSize(600, 400)
         
+        # Connect the signal to the slot
+        self.break_notification_signal.connect(self.show_break_notification)
+
         # Step 1: Create tray_icon BEFORE using it
         self.tray_icon = QSystemTrayIcon(self)
 
@@ -33,15 +37,12 @@ class MainWindow(QMainWindow):
         icon_path = os.path.join(base_dir, 'resources', 'icons', 'app_icon.png')
 
         if not os.path.exists(icon_path):
-            print(f"[ERROR] Icon file not found at: {icon_path}")
+            print(f"[WARNING] Icon file not found at: {icon_path}, using default")
+            icon = QIcon()  # Default empty icon
         else:
             icon = QIcon(icon_path)
-            self.setWindowIcon(icon)
-            self.tray_icon.setIcon(icon)
-
-        # Step 3: Set window and tray icon
-        self.setWindowIcon(QIcon(icon_path))
-        self.tray_icon.setIcon(QIcon(icon_path))
+        self.setWindowIcon(icon)
+        self.tray_icon.setIcon(icon)
 
         # Set up UI
         self.setup_ui()
@@ -54,6 +55,10 @@ class MainWindow(QMainWindow):
         self.update_timer.timeout.connect(self.update_ui)
         self.update_timer.start(1000)  # Update every second
     
+    def trigger_break_notification(self):
+        """Emit signal to show break notification in main thread."""
+        self.break_notification_signal.emit()
+
     def setup_ui(self):
         """Set up the main window UI."""
         # Central widget and main layout
@@ -88,7 +93,6 @@ class MainWindow(QMainWindow):
         self.start_pause_button.clicked.connect(self.toggle_timer)
         control_layout.addWidget(self.start_pause_button)
         
-      
         dashboard_layout.addLayout(control_layout)
         
         # Focus sound player
@@ -321,52 +325,71 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Stopped")
             self.status_label.setStyleSheet("font-size: 16px; font-weight: bold; color: red;")
             self.time_label.setText("--:--")
-            
+        
         # TODO: Update statistics
     
     def show_break_notification(self):
         """Show the break notification window."""
+        print("Attempting to show break notification")
         try:
-            # First, close existing notification if any
+            # Only hide if notification exists and is visible
             if self.notification and self.notification.isVisible():
-                self.notification.close()
-                self.notification = None
-        
-            # Create new notification with proper parent
+                self.hide_break_notification()
+                print("Any existing notification closed")
+
+            # Create new notification
             self.notification = NotificationWindow(parent=self)
             self.notification.closed.connect(self.on_notification_closed)
-        
+            self.notification.break_ended.connect(self.app_controller.on_break_end)
+            print("NotificationWindow created")
+            
             # Get break duration
             break_duration = self.app_controller.timer.break_duration
-        
+            print(f"Break duration: {break_duration} seconds")
+            
             # Show notification
             self.notification.show_for_duration(break_duration)
-        
+            print("Break notification shown")
         except Exception as e:
             print(f"Error showing notification: {e}")
-
-        # Ensure timer continues even if notification fails
-        if self.app_controller and self.app_controller.timer:
-            self.app_controller.timer.is_in_break = True
-
+            # Fallback to QMessageBox
+            QMessageBox.critical(self, "Popup Error", f"Failed to show notification: {e}", QMessageBox.StandardButton.Ok)
+            print("QMessageBox fallback shown")
+            
     def hide_break_notification(self):
         """Hide the break notification window."""
         if self.notification:
-            if self.notification.isVisible():
-                self.notification.close()
+            try:
+                if self.notification.isVisible():
+                    self.notification.close()
+                    print("Notification closed via hide_break_notification")
+            except Exception as e:
+                print(f"Error closing notification: {e}")
+            finally:
                 self.notification = None
-    
+                print("Notification reference cleared")
+
     def on_notification_closed(self):
         """Handle notification window close event."""
-        # This is called when the user manually closes the notification
-        # or when the automatic timer expires
-        pass
-    
+        print("Notification closed event received")
+        try:
+            if self.notification:
+                self.notification = None
+                print("Notification reference set to None")
+        except Exception as e:
+            print(f"Error in on_notification_closed: {e}")
+
     def closeEvent(self, event):
         """Handle window close event."""
-        if self.minimize_to_tray.isChecked():
-            event.ignore()
-            self.hide()
-        else:
-            self.tray_icon.hide()
-            event.accept()
+        print("Main window close event triggered")
+        try:
+            if self.minimize_to_tray.isChecked():
+                print("Minimizing to tray")
+                event.ignore()
+                self.hide()
+            else:
+                print("Closing application")
+                self.tray_icon.hide()
+                event.accept()
+        except Exception as e:
+            print(f"Error in closeEvent: {e}")

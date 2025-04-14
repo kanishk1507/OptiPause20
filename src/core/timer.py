@@ -25,12 +25,13 @@ class EyeCareTimer:
         self.is_in_break = False
         self.timer_thread = None
         self.work_start_time = None
-        self.break_start_time = None  # Initialize this attribute
+        self.break_start_time = None
         self.elapsed_work_time = 0
         self.pause_time = None
         self.last_activity_time = time.time()
         self.inactivity_threshold = 5 * 60  # 5 minutes in seconds
-        
+        self.break_ended_manually = False  # New flag to track manual end
+    
     def start(self):
         """Start the timer."""
         if self.is_running:
@@ -55,10 +56,10 @@ class EyeCareTimer:
         if not self.is_running or not self.is_paused:
             return
             
-        # Adjust the work start time to account for the pause duration
         if self.pause_time:
             pause_duration = time.time() - self.pause_time
             self.work_start_time += pause_duration
+            self.break_start_time = None if not self.is_in_break else self.break_start_time + pause_duration
             self.pause_time = None
             
         self.is_paused = False
@@ -77,14 +78,12 @@ class EyeCareTimer:
         """Update the last activity timestamp."""
         self.last_activity_time = time.time()
         
-        # If we were inactive and now there's activity, resume the timer
         if self.is_running and self.is_paused and self._is_paused_due_to_inactivity():
             self.resume()
     
     def manually_pause(self):
         """Pause the timer manually (user initiated)."""
         self.pause()
-        # Set a flag or store that this is a manual pause
         self._manual_pause = True
         
     def _is_paused_due_to_inactivity(self):
@@ -96,7 +95,6 @@ class EyeCareTimer:
         if time.time() - self.last_activity_time > self.inactivity_threshold:
             if self.is_running and not self.is_paused:
                 self.pause()
-                # This is an automatic pause due to inactivity
                 if hasattr(self, '_manual_pause'):
                     self._manual_pause = False
                 return True
@@ -117,7 +115,7 @@ class EyeCareTimer:
     
     def get_remaining_break_time(self):
         """Get the remaining time in the current break."""
-        if not self.is_running or not self.is_in_break or not hasattr(self, 'break_start_time') or self.break_start_time is None:
+        if not self.is_running or not self.is_in_break or not self.break_start_time:
             return 0
             
         if self.is_paused:
@@ -132,36 +130,43 @@ class EyeCareTimer:
         """Main timer loop running in a separate thread."""
         try:
             while self.is_running:
-                # Skip processing if paused
                 if self.is_paused:
                     time.sleep(1)
                     continue
                     
-                # Check for inactivity
                 self._check_inactivity()
                 
                 current_time = time.time()
                 
                 if not self.is_in_break:
-                    # Check if it's time for a break
                     if self.work_start_time and current_time - self.work_start_time >= self.work_duration:
                         self.is_in_break = True
                         self.break_start_time = current_time
                         if self.on_break_start:
                             self.on_break_start()
                 else:
-                    # Check if break is over
                     if self.break_start_time and current_time - self.break_start_time >= self.break_duration:
-                        self.is_in_break = False
-                        self.work_start_time = current_time
-                        if self.on_break_end:
-                            self.on_break_end()
+                        if not self.break_ended_manually:  # Only trigger if not ended manually
+                            self.is_in_break = False
+                            self.work_start_time = current_time
+                            if self.on_break_end:
+                                self.on_break_end()  # Let notification handle the rest
+                        self.break_ended_manually = False  # Reset flag
                 
-                # Sleep briefly to avoid high CPU usage
                 time.sleep(0.5)
         except Exception as e:
             print(f"Error in timer thread: {e}")
     
+    def end_break(self):
+        """End the break and resume work cycle."""
+        print("Ending break in timer")
+        self.is_in_break = False
+        self.break_ended_manually = True  # Mark as manually ended
+        if self.on_break_end:
+            self.on_break_end()
+        self.work_start_time = time.time()
+        self.start()  # Restart work timer
+        
     def get_session_stats(self):
         """Get statistics about the current session."""
         if not self.work_start_time:
@@ -174,7 +179,6 @@ class EyeCareTimer:
         current_time = time.time() if not self.is_paused else self.pause_time
         total_duration = current_time - self.work_start_time
         
-        # Estimate breaks taken (work duration / break interval)
         breaks_taken = int(total_duration / self.work_duration)
         
         status = "in_break" if self.is_in_break else "paused" if self.is_paused else "working"

@@ -118,38 +118,44 @@ class EyeCareApp:
         print("Break started")
         try:
             import datetime
-            
+
             # Record break start
-            if self.current_session_id:
+            if self.current_session_id and not self.current_break_id:
                 self.current_break_id = self.db.record_break(
                     self.current_session_id,
                     datetime.datetime.now().isoformat()
                 )
             
-            # Show break notification
+            # Trigger notification via signal
             if hasattr(self, 'main_window') and self.main_window:
-                self.main_window.show_break_notification()
+                self.main_window.trigger_break_notification()
         except Exception as e:
             print(f"Error on break start: {e}")
 
     def on_break_end(self):
         """Handler for when a break ends."""
         print("Break ended")
+        if not self.current_break_id or not self.timer.is_in_break:
+            print("Break end ignored, already completed")
+            return
         try:
-            # Record break completion
-            if self.current_break_id:
-                self.db.complete_break(
-                    self.current_break_id,
-                    self.timer.break_duration
-                )
-                self.current_break_id = None
+            self.db.complete_break(
+                self.current_break_id,
+                self.timer.break_duration - self.timer.get_remaining_break_time()
+            )
+            self.current_break_id = None
+            print("Break completion recorded")
             
-            # Hide break notification
             if hasattr(self, 'main_window') and self.main_window:
                 self.main_window.hide_break_notification()
+                print("Break notification hidden")
+            
+            if self.timer.is_in_break:
+                self.timer.end_break()
+                print("Break ended in timer")
         except Exception as e:
             print(f"Error on break end: {e}")
-            
+
     def on_user_activity(self):
         """Handler for user activity events."""
         self.timer.update_activity()

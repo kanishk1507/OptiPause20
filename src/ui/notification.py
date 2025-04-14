@@ -1,171 +1,135 @@
-# src/ui/notification.py
 from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLayout
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFont, QColor, QPalette
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
+from PyQt6.QtGui import QFont
 
 class NotificationWindow(QWidget):
-    """Transparent notification overlay for break reminders."""
+    """Simplified notification overlay for break reminders."""
     
     closed = pyqtSignal()
-    
-    # Modify the NotificationWindow initialization
+    break_ended = pyqtSignal()
+
     def __init__(self, parent=None):
-        # Use fewer window flags to reduce chance of issues
-        super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
-    
-        # Reduce transparency if that might be causing issues
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-    
-        # Add safety check for screen availability
-        if self.screen() is None:
-            from PyQt6.QtWidgets import QApplication
-            screen = QApplication.primaryScreen()
-            if screen:
-                self.setScreen(screen)
-    
-        # Set up the layout
+        super().__init__(parent, Qt.WindowType.WindowStaysOnTopHint)
+        
+        from PyQt6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen()
+        if screen:
+            self.setScreen(screen)
+        
         self.setup_ui()
-    
-        # Initialize timer for auto-close
-        self.close_timer = QTimer(self)
-        self.close_timer.timeout.connect(self.close)
-    
-        # Timer for countdown display
+        
         self.countdown_timer = QTimer(self)
+        self.countdown_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self.countdown_timer.moveToThread(QThread.currentThread())
         self.countdown_timer.timeout.connect(self.update_countdown)
-        self.countdown_seconds = 20  # Default
+        self.countdown_seconds = 20
         
     def setup_ui(self):
-        """Set up the notification UI."""
         layout = QVBoxLayout()
         
-        # Main content container with background
         container = QWidget()
-        container.setObjectName("notificationContainer")
-        container.setStyleSheet("""
-            #notificationContainer {
-                background-color: rgba(52, 73, 94, 0.9);
-                border-radius: 10px;
-                border: 1px solid rgba(255, 255, 255, 0.2);
-            }
-        """)
+        container.setStyleSheet("background-color: #34495e; border: 2px solid white;")
         
         container_layout = QVBoxLayout(container)
         
-        # Title
         self.title_label = QLabel("Time for an Eye Break!")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.title_label.setStyleSheet("""
-            color: white;
-            font-size: 18px;
-            font-weight: bold;
-            margin-bottom: 10px;
-        """)
+        self.title_label.setStyleSheet("color: white; font-size: 18px; font-weight: bold;")
         container_layout.addWidget(self.title_label)
         
-        # Instruction
-        self.instruction_label = QLabel(
-            "Look at something 20 feet away for 20 seconds"
-        )
-        self.instruction_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.instruction_label.setStyleSheet("""
-            color: white;
-            font-size: 14px;
-        """)
-        container_layout.addWidget(self.instruction_label)
-        
-        # Countdown
         self.countdown_label = QLabel("20")
         self.countdown_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.countdown_label.setStyleSheet("""
-            color: white;
-            font-size: 36px;
-            font-weight: bold;
-            margin: 15px 0;
-        """)
+        self.countdown_label.setStyleSheet("color: white; font-size: 36px; font-weight: bold;")
         container_layout.addWidget(self.countdown_label)
         
-        # Buttons
         buttons_layout = QHBoxLayout()
         
         self.skip_button = QPushButton("Skip")
-        self.skip_button.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(231, 76, 60, 0.8);
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: rgba(231, 76, 60, 1.0);
-            }
-        """)
-        self.skip_button.clicked.connect(self.close)
+        self.skip_button.setStyleSheet("background-color: red; color: white; padding: 8px;")
+        self.skip_button.clicked.connect(self.on_break_end)
         
         self.done_button = QPushButton("Done")
-        self.done_button.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(46, 204, 113, 0.8);
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: rgba(46, 204, 113, 1.0);
-            }
-        """)
-        self.done_button.clicked.connect(self.close)
+        self.done_button.setStyleSheet("background-color: green; color: white; padding: 8px;")
+        self.done_button.clicked.connect(self.on_break_end)
         
         buttons_layout.addWidget(self.skip_button)
         buttons_layout.addWidget(self.done_button)
         
         container_layout.addLayout(buttons_layout)
         
-        # Add container to main layout
         layout.addWidget(container)
         self.setLayout(layout)
         
-        # Set fixed size
         self.setFixedSize(300, 200)
         
     def start_countdown(self, seconds=20):
-        """Start the countdown timer."""
+        print("Starting countdown")
         self.countdown_seconds = seconds
         self.countdown_label.setText(str(seconds))
-        self.countdown_timer.start(1000)  # 1 second interval
+        self.countdown_timer.start(1000)
         
     def update_countdown(self):
-        """Update the countdown display."""
-        self.countdown_seconds -= 1
-        self.countdown_label.setText(str(self.countdown_seconds))
-        
-        if self.countdown_seconds <= 0:
+        print(f"Updating countdown: {self.countdown_seconds}")
+        if self.countdown_seconds > 0:
+            self.countdown_seconds -= 1
+            self.countdown_label.setText(str(self.countdown_seconds))
+        else:
+            print("Countdown reached 0, preparing to close")
             self.countdown_timer.stop()
-            self.close()
+            self.on_break_end()
+            print("Break end signal emitted, closing initiated")
             
-    # In notification.py, modify show_for_duration method
     def show_for_duration(self, seconds=20):
-        """Show the notification for the specified duration."""
+        print(f"Showing notification for {seconds} seconds")
         try:
             self.start_countdown(seconds)
-        
-            # Center on primary screen
-            screen_geometry = self.screen().geometry()
-            x = (screen_geometry.width() - self.width()) // 2
-            y = (screen_geometry.height() - self.height()) // 2  # Center vertically instead of fixed 100px
-            self.move(x, y)
-        
-            # Show the notification
+            
+            from PyQt6.QtWidgets import QApplication
+            screen = QApplication.primaryScreen()
+            if screen:
+                screen_geometry = screen.geometry()
+                x = (screen_geometry.width() - self.width()) // 2
+                y = (screen_geometry.height() - self.height()) // 2
+                self.move(x, y)
+                print(f"Notification positioned at x={x}, y={y}")
+            else:
+                self.move(100, 100)
+                print("Using fallback position at 100, 100")
+            
             self.show()
-            self.activateWindow()  # Make sure window gets focus
+            print("Notification shown")
+            self.raise_()
+            self.activateWindow()
+            print("Notification activated")
+            from PyQt6.QtCore import QEventLoop
+            loop = QEventLoop()
+            QTimer.singleShot(1000, loop.quit)  # 1000ms delay
+            loop.exec()
+            print("Delay completed, window should be visible")
+            # Hack to keep window visible
+            self.setWindowModality(Qt.WindowModality.ApplicationModal)  # Force visibility
         except Exception as e:
             print(f"Error displaying notification: {e}")
-            self.close()  # Close on error to prevent further issues
+            self.close()
+        
+    def on_break_end(self):
+        """Handle break end (manual or countdown finish)."""
+        print("Break ended manually or by countdown")
+        if self.countdown_timer.isActive() and QThread.currentThread() == self.thread():
+            self.countdown_timer.stop()
+            print("Countdown timer stopped")
+        self.break_ended.emit()
+        self.close()
+        print("Notification closed")
         
     def closeEvent(self, event):
-        """Handle close event."""
-        self.countdown_timer.stop()
-        self.closed.emit()
+        print("Closing notification event triggered")
+        try:
+            if self.countdown_timer.isActive() and QThread.currentThread() == self.thread():
+                self.countdown_timer.stop()
+                print("Countdown timer stopped in closeEvent")
+            self.closed.emit()
+            print("Closed signal emitted")
+        except Exception as e:
+            print(f"Error in closeEvent: {e}")
         super().closeEvent(event)
