@@ -6,3 +6,4 @@ matplotlib>=3.7.0
 pygame>=2.5.0               # For audio
 plotly>=5.13.0              # Alternative to matplotlib
 PyInstaller>=5.9.0          # For packaging
+pandas

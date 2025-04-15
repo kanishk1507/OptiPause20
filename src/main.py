@@ -147,7 +147,7 @@ class EyeCareApp:
         print("Break ended")
         try:
             import datetime
-    
+        
             # Record break completion in database
             if self.current_break_id:
                 self.db.complete_break(
@@ -155,19 +155,24 @@ class EyeCareApp:
                     self.timer.break_duration
                 )
                 
-                # Update daily stats for completed break
+                # Calculate work time since last break
+                work_time = 0
+                if self.timer.work_start_time:
+                    work_time = int(datetime.datetime.now().timestamp() - self.timer.work_start_time)
+                
+                # Update daily stats for completed break and work time
                 today = datetime.date.today().isoformat()
                 self.db.update_daily_stats(
                     today,
-                    0,  # No additional work time
+                    work_time,  # Add work time since last break
                     1,  # One break taken
                     1,  # One completed break
-                    0   # No change to longest session
+                    work_time  # Update longest session if applicable
                 )
                 
                 self.current_break_id = None
-                print("Break completion recorded")
-        
+                print(f"Break completion recorded with {work_time} seconds of work time")
+            
             # Hide notification if it exists
             if hasattr(self, 'main_window') and self.main_window:
                 # Use QTimer.singleShot to avoid potential recursion
@@ -179,7 +184,6 @@ class EyeCareApp:
                 self.timer.is_in_break = False
                 self.timer.work_start_time = datetime.datetime.now().timestamp()
                 print("Break ended in timer")
-        
         except Exception as e:
             print(f"Error on break end: {e}")
 

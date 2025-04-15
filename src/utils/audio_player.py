@@ -112,3 +112,107 @@ class AudioPlayer:
         if not sound_info:
             print(f"Sound '{sound_name}' not found")
             return False
+        
+        # Load and play the sound
+        try:
+            pygame.mixer.music.load(sound_info["path"])
+            pygame.mixer.music.set_volume(self.volume)
+            loops = -1 if loop else 0  # -1 means loop indefinitely
+            pygame.mixer.music.play(loops)
+            self.currently_playing = sound_name
+            self.is_playing = True
+            return True
+        except Exception as e:
+            print(f"Error playing sound: {e}")
+            return False
+    
+    def stop(self):
+        """Stop the currently playing sound."""
+        if self.is_initialized and self.is_playing:
+            pygame.mixer.music.stop()
+            self.is_playing = False
+            self.currently_playing = None
+    
+    def pause(self):
+        """Pause the currently playing sound."""
+        if self.is_initialized and self.is_playing:
+            pygame.mixer.music.pause()
+            self.is_playing = False
+    
+    def unpause(self):
+        """Unpause the currently paused sound."""
+        if self.is_initialized and not self.is_playing and self.currently_playing:
+            pygame.mixer.music.unpause()
+            self.is_playing = True
+    
+    def set_volume(self, volume: float):
+        """
+        Set the playback volume.
+        
+        Args:
+            volume: Volume level between 0.0 and 1.0
+        """
+        if not self.is_initialized:
+            return
+            
+        # Clamp volume between 0 and 1
+        self.volume = max(0.0, min(1.0, volume))
+        pygame.mixer.music.set_volume(self.volume)
+    
+    def get_volume(self) -> float:
+        """Get the current volume level."""
+        return self.volume
+    
+    def get_currently_playing(self) -> Optional[str]:
+        """Get the name of the currently playing sound."""
+        return self.currently_playing
+    
+    def is_sound_playing(self) -> bool:
+        """Check if a sound is currently playing."""
+        return self.is_playing
+    
+    def reload_sounds(self):
+        """Reload sounds from the sound directory."""
+        self._load_sounds()
+    
+    def set_sound_directory(self, sound_dir: Path):
+        """
+        Set a new sound directory and reload sounds.
+        
+        Args:
+            sound_dir: Path to the directory containing sound files
+        """
+        self.sound_dir = sound_dir
+        self.reload_sounds()
+
+
+# Example usage
+if __name__ == "__main__":
+    # Create an AudioPlayer with custom sound directory
+    custom_sound_dir = Path("./my_sounds")
+    player = AudioPlayer(custom_sound_dir)
+    
+    # Get and print available sounds
+    available_sounds = player.get_available_sounds()
+    print("Available sounds:")
+    for category, sounds in available_sounds.items():
+        print(f"  {category.title()}:")
+        for sound_name in sounds:
+            print(f"    - {sound_name}")
+    
+    # Ask user which sound to play
+    print("\nEnter the name of a sound to play:")
+    sound_name = input("> ")
+    
+    # Play the selected sound
+    if player.play(sound_name):
+        print(f"Playing {sound_name}...")
+        print("Press Ctrl+C to stop")
+        try:
+            while player.is_sound_playing():
+                time.sleep(1)
+        except KeyboardInterrupt:
+            player.stop()
+            print("\nStopped playback")
+    else:
+        print("Failed to play sound")

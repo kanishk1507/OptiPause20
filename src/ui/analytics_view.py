@@ -1,4 +1,3 @@
-# src/ui/analytics_view.py
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -72,6 +71,9 @@ class AnalyticsView(QWidget):
         self.streak_tab = QWidget()
         self.setup_streak_tab()
         self.tabs.addTab(self.streak_tab, "Streak")
+        
+        # Eye Health tab (new)
+        self.eye_health_tab = self.setup_eye_health_tab()
         
         main_layout.addWidget(self.tabs)
         
@@ -174,6 +176,57 @@ class AnalyticsView(QWidget):
         self.streak_chart = MatplotlibCanvas(self, width=7, height=4)
         layout.addWidget(self.streak_chart)
     
+    def setup_eye_health_tab(self):
+        """Set up the eye health analytics tab."""
+        # Create a new tab for eye health metrics
+        eye_health_tab = QWidget()
+        layout = QVBoxLayout(eye_health_tab)
+        
+        # Summary statistics
+        summary_frame = QFrame()
+        summary_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        summary_layout = QGridLayout(summary_frame)
+        
+        # Labels for statistics
+        summary_layout.addWidget(QLabel("Eye Health Score:"), 0, 0)
+        self.eye_health_score = QLabel("0%")
+        self.eye_health_score.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        summary_layout.addWidget(self.eye_health_score, 0, 1)
+        
+        summary_layout.addWidget(QLabel("Break Compliance:"), 1, 0)
+        self.break_compliance = QLabel("0%")
+        self.break_compliance.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        summary_layout.addWidget(self.break_compliance, 1, 1)
+        
+        summary_layout.addWidget(QLabel("Recommended Daily Breaks:"), 2, 0)
+        self.recommended_breaks = QLabel("0")
+        self.recommended_breaks.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        summary_layout.addWidget(self.recommended_breaks, 2, 1)
+        
+        layout.addWidget(summary_frame)
+        
+        # Eye strain risk chart
+        self.eye_strain_chart = MatplotlibCanvas(self, width=7, height=4)
+        layout.addWidget(self.eye_strain_chart)
+        
+        # Recommendations section
+        recommendations_frame = QFrame()
+        recommendations_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        recommendations_layout = QVBoxLayout(recommendations_frame)
+        
+        recommendations_layout.addWidget(QLabel("Eye Health Recommendations:"))
+        
+        self.recommendations_text = QLabel("Start taking regular breaks to improve your eye health.")
+        self.recommendations_text.setWordWrap(True)
+        recommendations_layout.addWidget(self.recommendations_text)
+        
+        layout.addWidget(recommendations_frame)
+        
+        # Add the tab
+        self.tabs.addTab(eye_health_tab, "Eye Health")
+        
+        return eye_health_tab
+    
     def refresh_analytics(self):
         """Refresh all analytics data and charts."""
         try:
@@ -208,12 +261,17 @@ class AnalyticsView(QWidget):
                     
                     # Get streak data and update streak tab
                     self._update_streak_analytics()
+                    
+                    # Update eye health tab
+                    self._update_eye_health_analytics(df)
             else:
                 # No data
                 self._update_no_data_state()
                 
         except Exception as e:
             print(f"Error refreshing analytics: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _get_selected_date_range(self):
         """Get the number of days to look back based on selection."""
@@ -343,6 +401,83 @@ class AnalyticsView(QWidget):
             
             # Update streak chart
             self._draw_streak_chart(df)
+    
+    def _update_eye_health_analytics(self, df):
+        """Update eye health analytics tab."""
+        if df.empty:
+            return
+            
+        # Calculate eye health metrics
+        total_screen_time = df['screen_time'].sum()
+        total_breaks = df['total_breaks'].sum()
+        completed_breaks = df['completed_breaks'].sum()
+        
+        # Calculate break compliance
+        compliance_rate = (completed_breaks / total_breaks * 100) if total_breaks > 0 else 0
+        
+        # Calculate eye health score (simple algorithm)
+        # Higher compliance and more breaks relative to screen time = better score
+        breaks_per_hour = completed_breaks / total_screen_time if total_screen_time > 0 else 0
+        ideal_breaks_per_hour = 3  # Ideally 3 breaks per hour (20-20-20 rule)
+        breaks_ratio = min(breaks_per_hour / ideal_breaks_per_hour, 1) if ideal_breaks_per_hour > 0 else 0
+        
+        health_score = (compliance_rate * 0.6) + (breaks_ratio * 40)  # 60% weight on compliance, 40% on break frequency
+        health_score = min(health_score, 100)  # Cap at 100%
+        
+        # Update labels
+        self.eye_health_score.setText(f"{health_score:.1f}%")
+        self.break_compliance.setText(f"{compliance_rate:.1f}%")
+        
+        # Calculate recommended breaks
+        avg_daily_screen_time = df['screen_time'].mean()
+        recommended_daily_breaks = max(3, int(avg_daily_screen_time * ideal_breaks_per_hour))
+        self.recommended_breaks.setText(f"{recommended_daily_breaks}")
+        
+        # Update recommendations based on metrics
+        if health_score < 40:
+            self.recommendations_text.setText(
+                "Your eye health score is low. Try to take more regular breaks and complete the full 20 seconds "
+                "for each break. Remember the 20-20-20 rule: every 20 minutes, look at something 20 feet away for 20 seconds."
+            )
+        elif health_score < 70:
+            self.recommendations_text.setText(
+                "You're doing okay, but could improve your eye health by taking more consistent breaks. "
+                "Try to complete all scheduled breaks and consider reducing continuous screen time."
+            )
+        else:
+            self.recommendations_text.setText(
+                "Great job! You're maintaining good eye health habits. Keep up the good work and "
+                "remember to blink frequently and stay hydrated for optimal eye health."
+            )
+        
+        # Update eye strain risk chart
+        self.eye_strain_chart.axes.clear()
+        
+        # Calculate daily eye strain risk based on screen time and breaks
+        df['strain_risk'] = df['screen_time'] / (df['completed_breaks'] + 1) * 3
+        df['strain_risk'] = df['strain_risk'].clip(0, 10)  # Scale from 0-10
+        
+        # Plot line chart
+        ax = self.eye_strain_chart.axes
+        ax.plot(df['date'], df['strain_risk'], color='#e74c3c', linewidth=2, marker='o')
+        
+        ax.set_title('Daily Eye Strain Risk (0-10)')
+        ax.set_ylabel('Risk Level')
+        ax.set_xlabel('Date')
+        ax.set_ylim(0, 10)
+        
+        # Add a horizontal line for moderate risk
+        ax.axhline(y=5, color='#f39c12', linestyle='--', alpha=0.7)
+        
+        # Add a horizontal line for high risk
+        ax.axhline(y=7.5, color='#c0392b', linestyle='--', alpha=0.7)
+        
+        # Format x-axis dates
+        plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
+        
+        # Ensure adequate spacing
+        self.eye_strain_chart.fig.tight_layout()
+        self.eye_strain_chart.draw()
     
     def _calculate_streaks(self, df):
         """Calculate current and longest streaks."""
@@ -539,295 +674,15 @@ class AnalyticsView(QWidget):
                                     verticalalignment='center',
                                     transform=self.streak_chart.axes.transAxes)
         self.streak_chart.draw()
-
-
-# src/ui/streak_view.py
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QCalendarWidget, 
-    QProgressBar, QFrame, QHBoxLayout
-)
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QColor, QPalette, QFont, QTextCharFormat
-
-from datetime import datetime, timedelta
-
-class StreakView(QWidget):
-    """Widget for displaying user's streak information."""
-    
-    def __init__(self, db):
-        super().__init__()
-        self.db = db
-        self.setup_ui()
-    
-    def setup_ui(self):
-        """Set up the streak view UI."""
-        layout = QVBoxLayout(self)
         
-        # Current streak display
-        streak_frame = QFrame()
-        streak_frame.setFrameShape(QFrame.Shape.StyledPanel)
-        streak_layout = QVBoxLayout(streak_frame)
+        # Eye health tab
+        self.eye_health_score.setText("0%")
+        self.break_compliance.setText("0%")
+        self.recommended_breaks.setText("0")
         
-        self.streak_label = QLabel("Current Streak: 0 days")
-        self.streak_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.streak_label.setFont(QFont("Arial", 18, QFont.Weight.Bold))
-        streak_layout.addWidget(self.streak_label)
-        
-        self.streak_desc = QLabel("Keep using the app daily and taking breaks!")
-        self.streak_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        streak_layout.addWidget(self.streak_desc)
-        
-        layout.addWidget(streak_frame)
-        
-        # Progress to next milestone
-        milestone_frame = QFrame()
-        milestone_layout = QVBoxLayout(milestone_frame)
-        
-        milestone_layout.addWidget(QLabel("Progress to next milestone:"))
-        
-        self.milestone_progress = QProgressBar()
-        self.milestone_progress.setMinimum(0)
-        self.milestone_progress.setMaximum(100)
-        self.milestone_progress.setValue(0)
-        milestone_layout.addWidget(self.milestone_progress)
-        
-        self.milestone_label = QLabel("0/7 days")
-        self.milestone_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        milestone_layout.addWidget(self.milestone_label)
-        
-        layout.addWidget(milestone_frame)
-        
-        # Calendar view
-        calendar_frame = QFrame()
-        calendar_frame.setFrameShape(QFrame.Shape.StyledPanel)
-        calendar_layout = QVBoxLayout(calendar_frame)
-        
-        calendar_layout.addWidget(QLabel("Your Activity Calendar:"))
-        
-        self.calendar = QCalendarWidget()
-        self.calendar.setGridVisible(True)
-        self.calendar.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
-        self.calendar.setHorizontalHeaderFormat(QCalendarWidget.HorizontalHeaderFormat.SingleLetterDayNames)
-        calendar_layout.addWidget(self.calendar)
-        
-        layout.addWidget(calendar_frame)
-        
-        # Streak statistics
-        stats_frame = QFrame()
-        stats_frame.setFrameShape(QFrame.Shape.StyledPanel)
-        stats_layout = QHBoxLayout(stats_frame)
-        
-        # Longest streak
-        longest_streak_layout = QVBoxLayout()
-        self.longest_streak_value = QLabel("0")
-        self.longest_streak_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.longest_streak_value.setFont(QFont("Arial", 24, QFont.Weight.Bold))
-        longest_streak_layout.addWidget(self.longest_streak_value)
-        
-        longest_streak_label = QLabel("Longest Streak")
-        longest_streak_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        longest_streak_layout.addWidget(longest_streak_label)
-        
-        stats_layout.addLayout(longest_streak_layout)
-        
-        # Total active days
-        active_days_layout = QVBoxLayout()
-        self.active_days_value = QLabel("0")
-        self.active_days_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.active_days_value.setFont(QFont("Arial", 24, QFont.Weight.Bold))
-        active_days_layout.addWidget(self.active_days_value)
-        
-        active_days_label = QLabel("Total Active Days")
-        active_days_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        active_days_layout.addWidget(active_days_label)
-        
-        stats_layout.addLayout(active_days_layout)
-        
-        # Perfect days (all breaks taken)
-        perfect_days_layout = QVBoxLayout()
-        self.perfect_days_value = QLabel("0")
-        self.perfect_days_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.perfect_days_value.setFont(QFont("Arial", 24, QFont.Weight.Bold))
-        perfect_days_layout.addWidget(self.perfect_days_value)
-        
-        perfect_days_label = QLabel("Perfect Days")
-        perfect_days_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        perfect_days_layout.addWidget(perfect_days_label)
-        
-        stats_layout.addLayout(perfect_days_layout)
-        
-        layout.addWidget(stats_frame)
-        
-        # Load current streak data
-        self.update_streak_data()
-    
-    def update_streak_data(self):
-        """Update streak data and UI."""
-        try:
-            # Get streak data from database
-            streak_data = self.db.get_streak_data(days=60)  # Get last 60 days
-            
-            if not streak_data:
-                return
-                
-            # Calculate streak metrics
-            current_streak, longest_streak, active_days, perfect_days = self._calculate_streak_metrics(streak_data)
-            
-            # Update UI
-            self.streak_label.setText(f"Current Streak: {current_streak} days")
-            
-            # Update streak description
-            if current_streak == 0:
-                self.streak_desc.setText("Start your streak by taking breaks today!")
-            elif current_streak < 3:
-                self.streak_desc.setText("Keep going! Your streak is just beginning.")
-            elif current_streak < 7:
-                self.streak_desc.setText("Great job! You're building a healthy habit.")
-            elif current_streak < 14:
-                self.streak_desc.setText("Fantastic! You're consistent with your eye care.")
-            elif current_streak < 30:
-                self.streak_desc.setText("Impressive streak! Your eyes thank you.")
-            else:
-                self.streak_desc.setText("Amazing dedication to eye care! Keep it up!")
-            
-            # Update next milestone progress
-            milestone_days = self._get_next_milestone(current_streak)
-            current_progress = current_streak % milestone_days if milestone_days > 0 else 0
-            progress_percentage = (current_progress / milestone_days) * 100 if milestone_days > 0 else 0
-            
-            self.milestone_progress.setValue(int(progress_percentage))
-            self.milestone_label.setText(f"{current_progress}/{milestone_days} days")
-            
-            # Update calendar with activity data
-            self._update_calendar(streak_data)
-            
-            # Update streak statistics
-            self.longest_streak_value.setText(str(longest_streak))
-            self.active_days_value.setText(str(active_days))
-            self.perfect_days_value.setText(str(perfect_days))
-            
-        except Exception as e:
-            print(f"Error updating streak data: {e}")
-    
-    def _calculate_streak_metrics(self, streak_data):
-        """Calculate streak metrics from database data."""
-        # Convert to dictionary with date as key for easier lookup
-        activity_dict = {row['date']: row for row in streak_data}
-        
-        # Get dates sorted in descending order (newest first)
-        dates = sorted(activity_dict.keys(), reverse=True)
-        
-        # Calculate current streak (consecutive days with activity)
-        current_streak = 0
-        today = datetime.now().date().isoformat()
-        yesterday = (datetime.now().date() - timedelta(days=1)).isoformat
-
-       
-    # Check if user has activity today
-        if today in activity_dict and activity_dict[today]['completed_breaks'] > 0:
-            current_streak = 1
-        
-            # Look back through previous days
-            current_date = yesterday
-            day_offset = 2
-        
-            while current_date in activity_dict:
-                if activity_dict[current_date]['completed_breaks'] > 0:
-                    current_streak += 1
-                    current_date = (datetime.now().date() - timedelta(days=day_offset)).isoformat()
-                    day_offset += 1
-                else:
-                    break
-        elif yesterday in activity_dict and activity_dict[yesterday]['completed_breaks'] > 0:
-            # If no activity today but had activity yesterday, count from yesterday
-            current_streak = 1
-        
-            # Look back through previous days
-            day_offset = 2
-            current_date = (datetime.now().date() - timedelta(days=day_offset)).isoformat()
-        
-            while current_date in activity_dict:
-                if activity_dict[current_date]['completed_breaks'] > 0:
-                    current_streak += 1
-                    day_offset += 1
-                    current_date = (datetime.now().date() - timedelta(days=day_offset)).isoformat()
-                else:
-                    break
-    
-        # Calculate longest streak
-        longest_streak = 0
-        current_run = 0
-        previous_date = None
-    
-        for date_str in sorted(activity_dict.keys()):  # Sort in ascending order for this calculation
-            date_obj = datetime.fromisoformat(date_str).date()
-        
-            # Check if day had completed breaks
-            if activity_dict[date_str]['completed_breaks'] > 0:
-                # Check if this is consecutive with previous date
-                if previous_date is not None and (date_obj - previous_date).days == 1:
-                    current_run += 1
-                else:
-                    current_run = 1
-                
-                # Update longest streak if current run is longer
-                longest_streak = max(longest_streak, current_run)
-                previous_date = date_obj
-            else:
-                # Break in streak
-                current_run = 0
-                previous_date = None
-        
-        # Calculate total active days (days with at least one completed break)
-        active_days = sum(1 for date in activity_dict if activity_dict[date]['completed_breaks'] > 0)
-        
-        # Calculate perfect days (all scheduled breaks were completed)
-        perfect_days = sum(1 for date in activity_dict 
-                        if activity_dict[date]['total_breaks'] > 0 
-                        and activity_dict[date]['completed_breaks'] == activity_dict[date]['total_breaks'])
-        
-        return current_streak, longest_streak, active_days, perfect_days
-
-    def _get_next_milestone(self, current_streak):
-        """Get the next milestone based on current streak."""
-        milestones = [3, 7, 14, 30, 60, 90, 180, 365]
-        
-        for milestone in milestones:
-            if current_streak < milestone:
-                return milestone
-        
-        # If beyond all milestones, set next milestone 100 days away
-        return ((current_streak // 100) + 1) * 100
-
-    def _update_calendar(self, streak_data):
-        """Update calendar with activity data."""
-        # Create a format for days with activity
-        active_format = QTextCharFormat()
-        active_format.setBackground(QColor(46, 204, 113, 100))  # Light green background
-        
-        # Create a format for perfect days
-        perfect_format = QTextCharFormat()
-        perfect_format.setBackground(QColor(46, 204, 113, 220))  # Darker green background
-        
-        # Create a format for days with activity but missed breaks
-        partial_format = QTextCharFormat()
-        partial_format.setBackground(QColor(241, 196, 15, 100))  # Light yellow background
-        
-        # Reset all date formats
-        self.calendar.setDateTextFormat(QDate(), QTextCharFormat())
-        
-        # Apply formatting to days based on activity
-        for row in streak_data:
-            date_obj = datetime.fromisoformat(row['date']).date()
-            qt_date = QDate(date_obj.year, date_obj.month, date_obj.day)
-            
-            if row['completed_breaks'] > 0:
-                if row['completed_breaks'] == row['total_breaks'] and row['total_breaks'] > 0:
-                    # Perfect day (all breaks taken)
-                    self.calendar.setDateTextFormat(qt_date, perfect_format)
-                else:
-                    # Partial day (some breaks taken)
-                    self.calendar.setDateTextFormat(qt_date, partial_format)
-            elif row['total_breaks'] > 0:
-                # Day with activity but no breaks taken
-                self.calendar.setDateTextFormat(qt_date, active_format)
+        self.eye_strain_chart.axes.clear()
+        self.eye_strain_chart.axes.text(0.5, 0.5, "No data available", 
+                                       horizontalalignment='center',
+                                       verticalalignment='center',
+                                       transform=self.eye_strain_chart.axes.transAxes)
+        self.eye_strain_chart.draw()

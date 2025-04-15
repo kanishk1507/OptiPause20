@@ -9,7 +9,7 @@ from PyQt6.QtGui import QIcon, QAction
 import os
 
 from .notification import NotificationWindow
-
+from .analytics_view import AnalyticsView
 class MainWindow(QMainWindow):
     """Main application window with settings and dashboard."""
         
@@ -58,7 +58,13 @@ class MainWindow(QMainWindow):
         """Emit signal to show break notification in main thread."""
         print("Triggering break notification signal")
         self.break_notification_signal.emit()
-
+    
+    def refresh_analytics(self):
+        """Refresh analytics data."""
+        if hasattr(self, 'analytics_view'):
+            self.analytics_view.refresh_analytics()
+            print("Analytics refreshed")
+    
     def setup_ui(self):
         """Set up the main window UI."""
         # Central widget and main layout
@@ -207,9 +213,13 @@ class MainWindow(QMainWindow):
         tabs.addTab(dashboard_tab, "Dashboard")
         tabs.addTab(settings_tab, "Settings")
         
-        # Analytics tab (to be implemented)
-        analytics_tab = QWidget()
-        tabs.addTab(analytics_tab, "Analytics")
+        # Analytics tab
+        self.analytics_view = AnalyticsView(self.app_controller.db)
+        tabs.addTab(self.analytics_view, "Analytics")
+        # refresh button for analytics
+        refresh_analytics_button = QPushButton("Refresh Analytics")
+        refresh_analytics_button.clicked.connect(self.refresh_analytics)
+        main_layout.addWidget(refresh_analytics_button)
         
         # Add tab widget to main layout
         main_layout.addWidget(tabs)
