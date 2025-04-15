@@ -41,3 +41,24 @@ It helps reduce digital eye strain by prompting users to take smart, non-intrusi
 ## Run the app:
 
 python src/main.py
+
+## Some screeenshots of application (with a basic gui):
+
+<table>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/197bd827-84da-428b-a657-1e7436613bd3" width="400"/></td>
+    <td><img src="https://github.com/user-attachments/assets/893fc310-aa86-424b-89f6-56b7aefa104e" width="400"/></td>
+  </tr>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/90e88de5-a86a-428e-9408-8e92bdce6525" width="400"/></td>
+    <td><img src="https://github.com/user-attachments/assets/8bc739d0-c339-4f4f-b1ff-82860aabceed" width="400"/></td>
+  </tr>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/f5bbeb5f-265e-4bbf-a292-ea6b83f03ea4" width="400"/></td>
+    <td><img src="https://github.com/user-attachments/assets/077d6f10-aeeb-4ced-96ac-dcf8fa83f6bd" width="400"/></td>
+  </tr>
+</table>
+
+
+
+P.S. : The GUI is created with AI Tools! 
