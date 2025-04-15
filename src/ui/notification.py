@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLayout
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont
 
 class NotificationWindow(QWidget):
@@ -9,20 +9,24 @@ class NotificationWindow(QWidget):
     break_ended = pyqtSignal()
 
     def __init__(self, parent=None):
-        super().__init__(parent, Qt.WindowType.WindowStaysOnTopHint)
+        super().__init__(None, Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
         
-        from PyQt6.QtWidgets import QApplication
-        screen = QApplication.primaryScreen()
-        if screen:
-            self.setScreen(screen)
+        # Set window flags to ensure it stays on top and has no frame
+        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | 
+                           Qt.WindowType.FramelessWindowHint | 
+                           Qt.WindowType.Tool)
         
         self.setup_ui()
         
+        # Setup countdown timer
         self.countdown_timer = QTimer(self)
-        self.countdown_timer.setTimerType(Qt.TimerType.PreciseTimer)
-        self.countdown_timer.moveToThread(QThread.currentThread())
         self.countdown_timer.timeout.connect(self.update_countdown)
         self.countdown_seconds = 20
+        
+        # Setup auto-close timer
+        self.close_timer = QTimer(self)
+        self.close_timer.setSingleShot(True)
+        self.close_timer.timeout.connect(self.on_break_end)
         
     def setup_ui(self):
         layout = QVBoxLayout()
@@ -45,11 +49,11 @@ class NotificationWindow(QWidget):
         buttons_layout = QHBoxLayout()
         
         self.skip_button = QPushButton("Skip")
-        self.skip_button.setStyleSheet("background-color: red; color: white; padding: 8px;")
+        self.skip_button.setStyleSheet("background-color: #e74c3c; color: white; padding: 8px;")
         self.skip_button.clicked.connect(self.on_break_end)
         
         self.done_button = QPushButton("Done")
-        self.done_button.setStyleSheet("background-color: green; color: white; padding: 8px;")
+        self.done_button.setStyleSheet("background-color: #2ecc71; color: white; padding: 8px;")
         self.done_button.clicked.connect(self.on_break_end)
         
         buttons_layout.addWidget(self.skip_button)
@@ -63,27 +67,30 @@ class NotificationWindow(QWidget):
         self.setFixedSize(300, 200)
         
     def start_countdown(self, seconds=20):
+        """Start the countdown timer."""
         print("Starting countdown")
         self.countdown_seconds = seconds
         self.countdown_label.setText(str(seconds))
         self.countdown_timer.start(1000)
         
+        # Also start the auto-close timer as a backup
+        self.close_timer.start((seconds + 1) * 1000)  # Add 1 second buffer
+        
     def update_countdown(self):
-        print(f"Updating countdown: {self.countdown_seconds}")
+        """Update the countdown display."""
         if self.countdown_seconds > 0:
             self.countdown_seconds -= 1
             self.countdown_label.setText(str(self.countdown_seconds))
         else:
-            print("Countdown reached 0, preparing to close")
             self.countdown_timer.stop()
-            self.on_break_end()
-            print("Break end signal emitted, closing initiated")
-            
+            # Use QTimer.singleShot to ensure on_break_end is called in the event loop
+            QTimer.singleShot(0, self.on_break_end)
+        
     def show_for_duration(self, seconds=20):
+        """Show the notification for the specified duration."""
         print(f"Showing notification for {seconds} seconds")
         try:
-            self.start_countdown(seconds)
-            
+            # Position in center of screen
             from PyQt6.QtWidgets import QApplication
             screen = QApplication.primaryScreen()
             if screen:
@@ -91,45 +98,48 @@ class NotificationWindow(QWidget):
                 x = (screen_geometry.width() - self.width()) // 2
                 y = (screen_geometry.height() - self.height()) // 2
                 self.move(x, y)
-                print(f"Notification positioned at x={x}, y={y}")
-            else:
-                self.move(100, 100)
-                print("Using fallback position at 100, 100")
             
+            # Start countdown and show window
+            self.start_countdown(seconds)
             self.show()
-            print("Notification shown")
             self.raise_()
             self.activateWindow()
-            print("Notification activated")
-            from PyQt6.QtCore import QEventLoop
-            loop = QEventLoop()
-            QTimer.singleShot(1000, loop.quit)  # 1000ms delay
-            loop.exec()
-            print("Delay completed, window should be visible")
-            # Hack to keep window visible
-            self.setWindowModality(Qt.WindowModality.ApplicationModal)  # Force visibility
         except Exception as e:
             print(f"Error displaying notification: {e}")
             self.close()
         
     def on_break_end(self):
         """Handle break end (manual or countdown finish)."""
-        print("Break ended manually or by countdown")
-        if self.countdown_timer.isActive() and QThread.currentThread() == self.thread():
+        print("Break ended, closing notification")
+        # Stop timers
+        if self.countdown_timer.isActive():
             self.countdown_timer.stop()
-            print("Countdown timer stopped")
-        self.break_ended.emit()
-        self.close()
-        print("Notification closed")
+        if self.close_timer.isActive():
+            self.close_timer.stop()
+            
+        # Emit signal before closing
+        try:
+            self.break_ended.emit()
+        except RuntimeError as e:
+            print(f"Error emitting break_ended signal: {e}")
+        
+        # Close window using singleShot to avoid recursion
+        QTimer.singleShot(0, self.close)
         
     def closeEvent(self, event):
-        print("Closing notification event triggered")
+        """Handle window close event."""
+        print("Notification close event triggered")
+        # Stop timers
+        if self.countdown_timer.isActive():
+            self.countdown_timer.stop()
+        if self.close_timer.isActive():
+            self.close_timer.stop()
+            
+        # Emit signal
         try:
-            if self.countdown_timer.isActive() and QThread.currentThread() == self.thread():
-                self.countdown_timer.stop()
-                print("Countdown timer stopped in closeEvent")
             self.closed.emit()
-            print("Closed signal emitted")
-        except Exception as e:
-            print(f"Error in closeEvent: {e}")
-        super().closeEvent(event)
+        except RuntimeError as e:
+            print(f"Error emitting closed signal: {e}")
+        
+        # Accept the close event
+        event.accept()

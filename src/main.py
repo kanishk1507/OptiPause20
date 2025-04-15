@@ -74,6 +74,16 @@ class EyeCareApp:
                 datetime.datetime.now().isoformat()
             )
             print(f"Started new session: {self.current_session_id}")
+        
+            # Start tracking screen time immediately
+            today = datetime.date.today().isoformat()
+            self.db.update_daily_stats(
+                today,
+                0,  # Will be updated when session ends
+                0,  # Will be updated when breaks occur
+                0,  # Will be updated when breaks complete
+                0   # Will be updated when session ends
+            )
     
     def stop_timer(self):
         """Stop the eye care timer and record session end."""
@@ -135,24 +145,41 @@ class EyeCareApp:
     def on_break_end(self):
         """Handler for when a break ends."""
         print("Break ended")
-        if not self.current_break_id or not self.timer.is_in_break:
-            print("Break end ignored, already completed")
-            return
         try:
-            self.db.complete_break(
-                self.current_break_id,
-                self.timer.break_duration - self.timer.get_remaining_break_time()
-            )
-            self.current_break_id = None
-            print("Break completion recorded")
-            
+            import datetime
+    
+            # Record break completion in database
+            if self.current_break_id:
+                self.db.complete_break(
+                    self.current_break_id,
+                    self.timer.break_duration
+                )
+                
+                # Update daily stats for completed break
+                today = datetime.date.today().isoformat()
+                self.db.update_daily_stats(
+                    today,
+                    0,  # No additional work time
+                    1,  # One break taken
+                    1,  # One completed break
+                    0   # No change to longest session
+                )
+                
+                self.current_break_id = None
+                print("Break completion recorded")
+        
+            # Hide notification if it exists
             if hasattr(self, 'main_window') and self.main_window:
-                self.main_window.hide_break_notification()
-                print("Break notification hidden")
-            
+                # Use QTimer.singleShot to avoid potential recursion
+                QTimer.singleShot(0, self.main_window.hide_break_notification)
+                print("Break notification hide scheduled")
+        
+            # End break in timer if still in break
             if self.timer.is_in_break:
-                self.timer.end_break()
+                self.timer.is_in_break = False
+                self.timer.work_start_time = datetime.datetime.now().timestamp()
                 print("Break ended in timer")
+        
         except Exception as e:
             print(f"Error on break end: {e}")
 

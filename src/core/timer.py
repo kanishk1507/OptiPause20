@@ -31,6 +31,7 @@ class EyeCareTimer:
         self.last_activity_time = time.time()
         self.inactivity_threshold = 5 * 60  # 5 minutes in seconds
         self.break_ended_manually = False  # New flag to track manual end
+        self.breaks_taken = 0  # Track number of breaks taken
     
     def start(self):
         """Start the timer."""
@@ -142,6 +143,7 @@ class EyeCareTimer:
                     if self.work_start_time and current_time - self.work_start_time >= self.work_duration:
                         self.is_in_break = True
                         self.break_start_time = current_time
+                        self.breaks_taken += 1  # Increment break counter
                         if self.on_break_start:
                             self.on_break_start()
                 else:
@@ -160,12 +162,20 @@ class EyeCareTimer:
     def end_break(self):
         """End the break and resume work cycle."""
         print("Ending break in timer")
+        if not self.is_in_break:
+            print("Not in break, ignoring end_break call")
+            return
+            
         self.is_in_break = False
         self.break_ended_manually = True  # Mark as manually ended
-        if self.on_break_end:
-            self.on_break_end()
         self.work_start_time = time.time()
-        self.start()  # Restart work timer
+        
+        # Call on_break_end callback if provided
+        if self.on_break_end:
+            try:
+                self.on_break_end()
+            except Exception as e:
+                print(f"Error in break end callback: {e}")
         
     def get_session_stats(self):
         """Get statistics about the current session."""
@@ -177,14 +187,15 @@ class EyeCareTimer:
             }
         
         current_time = time.time() if not self.is_paused else self.pause_time
-        total_duration = current_time - self.work_start_time
-        
-        breaks_taken = int(total_duration / self.work_duration)
+        if self.work_start_time:
+            total_duration = current_time - self.work_start_time
+        else:
+            total_duration = 0
         
         status = "in_break" if self.is_in_break else "paused" if self.is_paused else "working"
         
         return {
             "session_duration": int(total_duration),
-            "breaks_taken": breaks_taken,
+            "breaks_taken": self.breaks_taken,
             "current_status": status
         }

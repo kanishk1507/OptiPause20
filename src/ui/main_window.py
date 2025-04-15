@@ -1,11 +1,10 @@
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, QMetaObject, Qt, QTimer
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QSystemTrayIcon, QMenu,
     QTabWidget, QGridLayout, QSlider, QCheckBox, QComboBox,
     QMessageBox
 )
-from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QIcon, QAction
 import os
 
@@ -57,6 +56,7 @@ class MainWindow(QMainWindow):
     
     def trigger_break_notification(self):
         """Emit signal to show break notification in main thread."""
+        print("Triggering break notification signal")
         self.break_notification_signal.emit()
 
     def setup_ui(self):
@@ -326,22 +326,57 @@ class MainWindow(QMainWindow):
             self.status_label.setStyleSheet("font-size: 16px; font-weight: bold; color: red;")
             self.time_label.setText("--:--")
         
-        # TODO: Update statistics
+        # Update statistics from database
+        try:
+            import datetime
+            today = datetime.date.today().isoformat()
+            
+            # Get today's stats
+            db = self.app_controller.db
+            cursor = db.conn.cursor()
+            cursor.execute('SELECT * FROM daily_stats WHERE date = ?', (today,))
+            stats = cursor.fetchone()
+            
+            if stats:
+                # Update screen time (convert seconds to hours)
+                screen_time_hours = stats['total_work_seconds'] / 3600.0
+                self.screen_time_label.setText(f"{screen_time_hours:.1f} hours")
+                
+                # Update breaks taken
+                self.breaks_taken_label.setText(f"{stats['completed_breaks']}")
+                
+                # Update streak (days with completed breaks)
+                streak_data = db.get_streak_data(days=30)
+                current_streak = 0
+                
+                for row in streak_data:
+                    if row['completed_breaks'] > 0:
+                        current_streak += 1
+                    else:
+                        break
+                        
+                self.streak_label.setText(f"{current_streak} days")
+            else:
+                # No stats for today yet
+                self.screen_time_label.setText("0 hours")
+                self.breaks_taken_label.setText("0")
+                self.streak_label.setText("0 days")
+        except Exception as e:
+            print(f"Error updating statistics: {e}")
     
     def show_break_notification(self):
         """Show the break notification window."""
         print("Attempting to show break notification")
         try:
-            # Only hide if notification exists and is visible
-            if self.notification and self.notification.isVisible():
-                self.hide_break_notification()
-                print("Any existing notification closed")
-
+            # Clean up any existing notification
+            self.hide_break_notification()
+            
             # Create new notification
-            self.notification = NotificationWindow(parent=self)
+            self.notification = NotificationWindow()
+            
+            # Connect signals
             self.notification.closed.connect(self.on_notification_closed)
             self.notification.break_ended.connect(self.app_controller.on_break_end)
-            print("NotificationWindow created")
             
             # Get break duration
             break_duration = self.app_controller.timer.break_duration
@@ -350,39 +385,47 @@ class MainWindow(QMainWindow):
             # Show notification
             self.notification.show_for_duration(break_duration)
             print("Break notification shown")
+            
+            # Force process events to ensure UI updates
+            QMetaObject.invokeMethod(self, "_process_events", Qt.ConnectionType.QueuedConnection)
+            
         except Exception as e:
             print(f"Error showing notification: {e}")
-            # Fallback to QMessageBox
-            QMessageBox.critical(self, "Popup Error", f"Failed to show notification: {e}", QMessageBox.StandardButton.Ok)
-            print("QMessageBox fallback shown")
-            
+        # Fallback to QMessageBox
+            QMessageBox.information(self, "Eye Break", "Time for a 20-second eye break! Look at something 20 feet away.", QMessageBox.StandardButton.Ok)
+        # Use QTimer.singleShot to avoid potential recursion
+            QTimer.singleShot(0, self.app_controller.on_break_end)
+    
+    def _process_events(self):
+        """Process pending events to ensure UI updates."""
+        from PyQt6.QtCore import QCoreApplication
+        QCoreApplication.processEvents()
+
     def hide_break_notification(self):
         """Hide the break notification window."""
         if self.notification:
             try:
-                if self.notification.isVisible():
-                    self.notification.close()
-                    print("Notification closed via hide_break_notification")
+                print("Attempting to close existing notification")
+                self.notification.close()
+                self.notification = None
+                print("Notification closed and reference cleared")
             except Exception as e:
                 print(f"Error closing notification: {e}")
-            finally:
                 self.notification = None
-                print("Notification reference cleared")
 
     def on_notification_closed(self):
         """Handle notification window close event."""
         print("Notification closed event received")
-        try:
-            if self.notification:
-                self.notification = None
-                print("Notification reference set to None")
-        except Exception as e:
-            print(f"Error in on_notification_closed: {e}")
+        self.notification = None
+        print("Notification reference set to None")
 
     def closeEvent(self, event):
         """Handle window close event."""
         print("Main window close event triggered")
         try:
+            # Clean up any open notification
+            self.hide_break_notification()
+            
             if self.minimize_to_tray.isChecked():
                 print("Minimizing to tray")
                 event.ignore()
